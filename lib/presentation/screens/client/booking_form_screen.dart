@@ -140,14 +140,31 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     }
 
     // Generate slot dengan status availability
+    final DateTime now = DateTime.now();
+    final bool isToday = _selectedDate != null &&
+        _selectedDate!.year == now.year &&
+        _selectedDate!.month == now.month &&
+        _selectedDate!.day == now.day;
+
     for (var time in allTimes) {
       bool isAvailable = true;
       String? bookedBy;
       String? bookingId;
-      String? conflictInfo;
 
-      // Cek apakah slot waktu ini overlap dengan booking yang sudah ada
-      for (var booking in existingBookings) {
+      // Cek apakah jam sudah lewat jika memilih hari ini
+      if (isToday) {
+        final int nowMinutes = now.hour * 60 + now.minute;
+        final int slotMinutes = time.hour * 60 + time.minute;
+        
+        if (slotMinutes <= nowMinutes) {
+          isAvailable = false;
+        }
+      }
+
+      // Jika masih available setelah cek waktu sekarang, cek overlap dengan booking lain
+      if (isAvailable) {
+        // Cek apakah slot waktu ini overlap dengan booking yang sudah ada
+        for (var booking in existingBookings) {
         final bookingTime = TimeOfDay.fromDateTime(booking.tanggal);
         
         // Cari durasi layanan dari list layanan yang ada di provider
@@ -173,14 +190,15 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
           break;
         }
       }
-
-      slots.add(TimeSlot(
-        time: time,
-        isAvailable: isAvailable,
-        bookedBy: bookedBy,
-        bookingId: bookingId,
-      ));
     }
+
+    slots.add(TimeSlot(
+      time: time,
+      isAvailable: isAvailable,
+      bookedBy: bookedBy,
+      bookingId: bookingId,
+    ));
+  }
 
     setState(() {
       _timeSlots = slots;
