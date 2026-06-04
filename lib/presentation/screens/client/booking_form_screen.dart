@@ -163,42 +163,37 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
 
       // Jika masih available setelah cek waktu sekarang, cek overlap dengan booking lain
       if (isAvailable) {
-        // Cek apakah slot waktu ini overlap dengan booking yang sudah ada
         for (var booking in existingBookings) {
-        final bookingTime = TimeOfDay.fromDateTime(booking.tanggal);
-        
-        // Cari durasi layanan dari list layanan yang ada di provider
-        final layananBooking = bookingProvider.layananList.firstWhere(
-          (l) => l.id == booking.idLayanan,
-          orElse: () => LayananModel(id: '', namaLayanan: '', harga: 0, durasiMenit: 30),
-        );
-        final bookingDuration = layananBooking.durasiMenit;
-        
-        final layananDuration = _selectedLayanan?.durasiMenit ?? 30;
-        
-        // Hitung waktu selesai booking
-        final bookingStartMinutes = bookingTime.hour * 60 + bookingTime.minute;
-        final bookingEndMinutes = bookingStartMinutes + bookingDuration;
-        final slotStartMinutes = time.hour * 60 + time.minute;
-        final slotEndMinutes = slotStartMinutes + layananDuration;
+          final bookingTime = TimeOfDay.fromDateTime(booking.tanggal);
+          
+          final layananBooking = bookingProvider.layananList.firstWhere(
+            (l) => l.id == booking.idLayanan,
+            orElse: () => LayananModel(id: '', namaLayanan: '', harga: 0, durasiMenit: 30),
+          );
+          final bookingDuration = layananBooking.durasiMenit;
+          final layananDuration = _selectedLayanan?.durasiMenit ?? 30;
+          
+          final bookingStartMinutes = bookingTime.hour * 60 + bookingTime.minute;
+          final bookingEndMinutes = bookingStartMinutes + bookingDuration;
+          final slotStartMinutes = time.hour * 60 + time.minute;
+          final slotEndMinutes = slotStartMinutes + layananDuration;
 
-        // Cek overlap: (StartA < EndB) and (EndA > StartB)
-        if (slotStartMinutes < bookingEndMinutes && slotEndMinutes > bookingStartMinutes) {
-          isAvailable = false;
-          bookedBy = booking.namaPemesan;
-          bookingId = booking.id;
-          break;
+          if (slotStartMinutes < bookingEndMinutes && slotEndMinutes > bookingStartMinutes) {
+            isAvailable = false;
+            bookedBy = booking.namaPemesan;
+            bookingId = booking.id;
+            break;
+          }
         }
       }
-    }
 
-    slots.add(TimeSlot(
-      time: time,
-      isAvailable: isAvailable,
-      bookedBy: bookedBy,
-      bookingId: bookingId,
-    ));
-  }
+      slots.add(TimeSlot(
+        time: time,
+        isAvailable: isAvailable,
+        bookedBy: bookedBy,
+        bookingId: bookingId,
+      ));
+    }
 
     setState(() {
       _timeSlots = slots;
