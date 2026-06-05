@@ -29,6 +29,14 @@ class _ClientChatScreenState extends State<ClientChatScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    Provider.of<ChatProvider>(context, listen: false).stopPolling();
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _sendMessage() async {
     if (_messageController.text.trim().isEmpty) return;
     

@@ -207,15 +207,48 @@ class BookingProvider extends ChangeNotifier {
   }
 
   // 7. FINANCIAL REPORT LOGIC
-  
-  // Total Pendapatan (Semua Waktu)
+  List<PembayaranModel> _filteredPembayaranList = [];
+  List<PembayaranModel> get filteredPembayaranList => _filteredPembayaranList;
+
+  Future<void> fetchLaporanKeuangan(DateTime start, DateTime end) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      _filteredPembayaranList = await _dbService.getPembayaranByDateRange(start, end);
+    } catch (e) {
+      print("Error fetchLaporanKeuangan: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Pendapatan Terfilter (Hanya Lunas)
+  int get filteredRevenue {
+    return _filteredPembayaranList
+        .where((p) => p.status.toLowerCase() == 'lunas')
+        .fold(0, (sum, item) => sum + item.jumlahBayar);
+  }
+
+  // Total Transaksi Terfilter (Opsi: Semua Order masuk)
+  int get filteredTotalOrders {
+    // Sesuai permintaan: Menghitung semua order masuk (Lunas & Belum Lunas)
+    return _filteredPembayaranList.length;
+  }
+
+  // Total Transaksi Terfilter (Opsi: Hanya Lunas)
+  int get filteredPaidOrders {
+    return _filteredPembayaranList.where((p) => p.status.toLowerCase() == 'lunas').length;
+  }
+
+  // Total Pendapatan (Semua Waktu - Legacy support)
   int get totalRevenue {
     return _pembayaranList
         .where((p) => p.status.toLowerCase() == 'lunas')
         .fold(0, (sum, item) => sum + item.jumlahBayar);
   }
 
-  // Pendapatan Hari Ini
+  // Pendapatan Hari Ini (Untuk Dashboard)
   int get todayRevenue {
     final now = DateTime.now();
     return _pembayaranList
@@ -225,7 +258,7 @@ class BookingProvider extends ChangeNotifier {
         .fold(0, (sum, item) => sum + item.jumlahBayar);
   }
 
-  // Pendapatan Bulan Ini
+  // Pendapatan Bulan Ini (Untuk Dashboard)
   int get monthRevenue {
     final now = DateTime.now();
     return _pembayaranList
@@ -236,7 +269,7 @@ class BookingProvider extends ChangeNotifier {
         .fold(0, (sum, item) => sum + item.jumlahBayar);
   }
 
-  // Data Grafik (7 Hari Terakhir)
+  // Data Grafik (7 Hari Terakhir - Menggunakan list utama atau filter jika relevan)
   Map<DateTime, int> getDailyRevenueData() {
     final Map<DateTime, int> data = {};
     final now = DateTime.now();
@@ -247,7 +280,7 @@ class BookingProvider extends ChangeNotifier {
       data[date] = 0;
     }
 
-    // Isi dengan data real
+    // Gunakan _pembayaranList (data terbaru) untuk grafik tren
     for (var payment in _pembayaranList) {
       if (payment.status.toLowerCase() == 'lunas') {
         final paymentDate = DateTime(payment.createdAt.year, payment.createdAt.month, payment.createdAt.day);

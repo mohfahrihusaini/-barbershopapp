@@ -601,46 +601,25 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     // Format jam
     final jamString = "${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}";
 
-    try {
-      // Kirim ke Database
-      final reservasiId = await bookingProvider.submitBooking(
-        idUser: user!.id,
-        namaPemesan: user.nama,
-        tanggal: bookingDateTime,
-        waktuMulai: jamString,
-        idBarber: _selectedBarber!.id,
-        idLayanan: _selectedLayanan!.id,
+    // PINDAH KE HALAMAN PEMBAYARAN (Tanpa Simpan DB dulu)
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PaymentScreen(
+            bookingData: {
+              'idUser': user!.id,
+              'namaPemesan': user.nama,
+              'tanggal': bookingDateTime,
+              'waktuMulai': jamString,
+              'idBarber': _selectedBarber!.id,
+              'idLayanan': _selectedLayanan!.id,
+              'namaLayanan': _selectedLayanan!.namaLayanan,
+              'harga': _selectedLayanan!.harga,
+            },
+          ),
+        ),
       );
-
-      // Jika Sukses, Pindah ke Halaman Pembayaran
-      if (mounted && reservasiId != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Booking Berhasil! Silakan lakukan pembayaran."),
-            backgroundColor: AppColors.success,
-          ),
-        );
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PaymentScreen(
-              idReservasi: reservasiId,
-              totalBayar: _selectedLayanan!.harga,
-              namaLayanan: _selectedLayanan!.namaLayanan,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Gagal Booking: $e"),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
     }
   }
 

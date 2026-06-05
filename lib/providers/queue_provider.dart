@@ -149,35 +149,34 @@ class QueueProvider extends ChangeNotifier {
     try {
       // Optimistic update
       final index = _currentQueue.indexWhere((q) => q.id == id);
+      ReservasiModel? targetReservation;
       if (index != -1) {
-        final oldItem = _currentQueue[index];
+        targetReservation = _currentQueue[index];
         _currentQueue[index] = ReservasiModel(
-          id: oldItem.id,
-          tanggal: oldItem.tanggal,
-          waktuMulai: oldItem.waktuMulai,
+          id: targetReservation.id,
+          tanggal: targetReservation.tanggal,
+          waktuMulai: targetReservation.waktuMulai,
           statusAntrian: newStatus,
-          idUser: oldItem.idUser,
-          idBarber: oldItem.idBarber,
-          idLayanan: oldItem.idLayanan,
-          namaPemesan: oldItem.namaPemesan,
-          nomorAntrian: oldItem.nomorAntrian,
-          waktuBooking: oldItem.waktuBooking,
-          estimasiWaktuSelesai: oldItem.estimasiWaktuSelesai,
+          idUser: targetReservation.idUser,
+          idBarber: targetReservation.idBarber,
+          idLayanan: targetReservation.idLayanan,
+          namaPemesan: targetReservation.namaPemesan,
+          nomorAntrian: targetReservation.nomorAntrian,
+          waktuBooking: targetReservation.waktuBooking,
+          estimasiWaktuSelesai: targetReservation.estimasiWaktuSelesai,
         );
         notifyListeners();
       }
 
       // Update in database
-      // Kita kirim semua atribut required untuk jaga-jaga
       int? nomorAntrianToSend;
       String? waktuBookingToSend;
       String? estimasiSelesaiToSend;
 
-      if (index != -1) {
-        final item = _currentQueue[index];
-        nomorAntrianToSend = item.nomorAntrian;
-        waktuBookingToSend = item.waktuBooking.toIso8601String();
-        estimasiSelesaiToSend = item.estimasiWaktuSelesai?.toIso8601String();
+      if (targetReservation != null) {
+        nomorAntrianToSend = targetReservation.nomorAntrian;
+        waktuBookingToSend = targetReservation.waktuBooking.toIso8601String();
+        estimasiSelesaiToSend = targetReservation.estimasiWaktuSelesai?.toIso8601String();
       }
       
       await _dbService.updateStatusReservasi(
@@ -187,6 +186,19 @@ class QueueProvider extends ChangeNotifier {
         waktuBooking: waktuBookingToSend,
         estimasiWaktuSelesai: estimasiSelesaiToSend,
       );
+
+      // --- LOGIKA OTOMATISASI PEMBAYARAN (BARU) ---
+      if (newStatus == 'Selesai') {
+        final pembayaran = await _dbService.getPembayaranByReservasiId(id);
+        if (pembayaran != null) {
+          final isCOD = pembayaran.metode.contains('Ditempat') || pembayaran.metode.contains('Cash');
+          if (isCOD) {
+            // Jika COD dan Selesai, otomatis LUNAS
+            await _dbService.updateStatusPembayaran(pembayaran.id, 'Lunas');
+            print("OTOMATIS: Pembayaran COD ${pembayaran.id} diset LUNAS karena antrian Selesai.");
+          }
+        }
+      }
       
       // Reload queue to ensure consistency
       loadQueue();

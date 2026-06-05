@@ -305,9 +305,53 @@ class DatabaseService {
     final response = await _appwrite.databases.listDocuments(
       databaseId: AppConstants.databaseId,
       collectionId: AppConstants.collectionPembayaran,
-      queries: [Query.orderDesc('\$createdAt')],
+      queries: [
+        Query.orderDesc('\$createdAt'),
+        Query.limit(100), // Tingkatkan limit agar laporan lebih lengkap
+      ],
     );
     return response.documents.map((doc) => PembayaranModel.fromJson(doc.data)).toList();
+  }
+
+  // --- BARU: Ambil Pembayaran berdasarkan Rentang Tanggal ---
+  Future<List<PembayaranModel>> getPembayaranByDateRange(DateTime start, DateTime end) async {
+    try {
+      final response = await _appwrite.databases.listDocuments(
+        databaseId: AppConstants.databaseId,
+        collectionId: AppConstants.collectionPembayaran,
+        queries: [
+          Query.greaterThanEqual('\$createdAt', start.toIso8601String()),
+          Query.lessThanEqual('\$createdAt', end.toIso8601String()),
+          Query.orderDesc('\$createdAt'),
+          Query.limit(500), // Limit cukup besar untuk laporan
+        ],
+      );
+      return response.documents.map((doc) => PembayaranModel.fromJson(doc.data)).toList();
+    } catch (e) {
+      print("Error getPembayaranByDateRange: $e");
+      return [];
+    }
+  }
+
+  // --- BARU: Cari Pembayaran by Reservasi ID ---
+  Future<PembayaranModel?> getPembayaranByReservasiId(String idReservasi) async {
+    try {
+      final response = await _appwrite.databases.listDocuments(
+        databaseId: AppConstants.databaseId,
+        collectionId: AppConstants.collectionPembayaran,
+        queries: [
+          Query.equal('id_reservasi', idReservasi),
+          Query.limit(1),
+        ],
+      );
+      if (response.documents.isNotEmpty) {
+        return PembayaranModel.fromJson(response.documents.first.data);
+      }
+      return null;
+    } catch (e) {
+      print("Error getPembayaranByReservasiId: $e");
+      return null;
+    }
   }
 
   Future<void> updateStatusPembayaran(String idPembayaran, String statusBaru) async {
@@ -403,22 +447,25 @@ class DatabaseService {
     }
   }
 
-  // ==================== CHAT SYSTEM ====================
+  // ==================== CHAT SYSTEM (REVISED) ====================
   
-  // 1. Ambil atau Buat Chat Room untuk User tertentu
+  // 1. Ambil atau Buat Chat Room untuk User tertentu (Isolasi per Pelanggan)
   Future<String> getOrCreateChatRoom(String userId, String userName) async {
     try {
-      // Cek apakah room sudah ada (Gunakan id_user sesuai DB)
+      // Pastikan query mencari room spesifik milik userId ini
       final response = await _appwrite.databases.listDocuments(
         databaseId: AppConstants.databaseId,
         collectionId: AppConstants.chatRoomsCollectionId,
-        queries: [Query.equal('id_user', userId)],
+        queries: [
+          Query.equal('id_user', userId),
+          Query.limit(1),
+        ],
       );
 
       if (response.documents.isNotEmpty) {
         return response.documents.first.$id;
       } else {
-        // Buat room baru (Gunakan atribut sesuai DB user)
+        // Buat room baru yang terikat unik ke userId
         final newRoom = await _appwrite.databases.createDocument(
           databaseId: AppConstants.databaseId,
           collectionId: AppConstants.chatRoomsCollectionId,
@@ -426,10 +473,10 @@ class DatabaseService {
           data: {
             'id_user': userId,
             'username': userName,
-            'lastmessage': 'Chat dimulai',
+            'lastmessage': 'Halo, ada yang bisa kami bantu?',
             'lastmessagetime': DateTime.now().toIso8601String(),
             'unread_count': 0,
-            'isActive': true, // SUDAH DIPERBAIKI (Boolean)
+            'isActive': true,
           },
         );
         return newRoom.$id;
@@ -439,35 +486,41 @@ class DatabaseService {
     }
   }
 
-  // 2. Ambil Daftar Pesan dalam Room
+  // 2. Ambil Daftar Pesan dalam Room dengan Isolasi Keamanan
   Future<List<Map<String, dynamic>>> getChatMessages(String roomId) async {
     try {
       final response = await _appwrite.databases.listDocuments(
         databaseId: AppConstants.databaseId,
         collectionId: AppConstants.chatMessagesCollectionId,
         queries: [
-          Query.equal('id_chatroom', roomId), // Sesuai DB: id_chatroom
+          Query.equal('id_chatroom', roomId),
           Query.orderAsc('timestamp'),
+          Query.limit(100), // Batasi 100 pesan terakhir
         ],
       );
       
+      // Note: Filter (sender/receiver) secara teknis sudah terwakili oleh id_chatroom,
+      // namun id_chatroom adalah kunci utama pemisahan room.
       return response.documents.map((doc) => doc.data).toList();
     } catch (e) {
+      print("Error getChatMessages: $e");
       return [];
     }
   }
 
-  // 3. Kirim Pesan
+  // 3. Kirim Pesan dengan Payload Lengkap
   Future<void> sendMessage({
     required String roomId,
     required String senderId,
     required String senderName,
-    required String receiverId,
+    required String receiverId, // ID Pelanggan atau 'admin'
     required String text,
     required bool isAdmin,
   }) async {
     try {
-      // a. Simpan Pesan (Gunakan atribut sesuai DB user)
+      final timestamp = DateTime.now().toIso8601String();
+
+      // a. Simpan Pesan ke Koleksi Messages
       await _appwrite.databases.createDocument(
         databaseId: AppConstants.databaseId,
         collectionId: AppConstants.chatMessagesCollectionId,
@@ -478,20 +531,24 @@ class DatabaseService {
           'sender_name': senderName,
           'id_receiver': receiverId,
           'message': text,
-          'timestamp': DateTime.now().toIso8601String(),
+          'timestamp': timestamp,
           'isread': false,
           'type': 'text',
         },
       );
 
-      // b. Update Room (Last Message)
+      // b. Update Informasi Terakhir di Room
       final roomDoc = await _appwrite.databases.getDocument(
         databaseId: AppConstants.databaseId,
         collectionId: AppConstants.chatRoomsCollectionId,
         documentId: roomId,
       );
       
-      int currentUnread = (roomDoc.data['unread_count'] ?? 0) + 1;
+      // Logic Unread: Tambah jika pesan dari pelanggan untuk admin
+      int newUnread = roomDoc.data['unread_count'] ?? 0;
+      if (!isAdmin) {
+        newUnread += 1;
+      }
 
       await _appwrite.databases.updateDocument(
         databaseId: AppConstants.databaseId,
@@ -499,9 +556,9 @@ class DatabaseService {
         documentId: roomId,
         data: {
           'lastmessage': text,
-          'lastmessagetime': DateTime.now().toIso8601String(),
-          'unread_count': currentUnread,
-          'isActive': true, // SUDAH DIPERBAIKI (Boolean)
+          'lastmessagetime': timestamp,
+          'unread_count': isAdmin ? 0 : newUnread, // Admin membalas = reset unread (opsional)
+          'isActive': true,
         },
       );
     } catch (e) {
@@ -510,20 +567,56 @@ class DatabaseService {
     }
   }
 
-  // 4. Admin: Ambil Semua Chat Room
+  // 4. Admin: Ambil Daftar Chat Room dengan Join Manual ke Data User (Dinamis)
   Future<List<Map<String, dynamic>>> getAllChatRooms() async {
     try {
+      // a. Ambil daftar room chat
       final response = await _appwrite.databases.listDocuments(
         databaseId: AppConstants.databaseId,
         collectionId: AppConstants.chatRoomsCollectionId,
-        queries: [Query.orderDesc('lastmessagetime')],
+        queries: [
+          Query.orderDesc('lastmessagetime'),
+        ],
       );
-      return response.documents.map((doc) {
-        final data = doc.data;
+
+      List<Map<String, dynamic>> rooms = response.documents.map((doc) {
+        final data = Map<String, dynamic>.from(doc.data);
         data['\$id'] = doc.$id; 
         return data;
       }).toList();
+
+      // b. Join Manual: Ambil semua ID User yang unik dari daftar room
+      final userIds = rooms.map((r) => r['id_user'] as String).toSet().toList();
+      
+      if (userIds.isEmpty) return [];
+
+      // c. Fetch data user secara batch (untuk efisiensi daripada loop satu-satu)
+      final usersResponse = await _appwrite.databases.listDocuments(
+        databaseId: AppConstants.databaseId,
+        collectionId: AppConstants.collectionUsers,
+        queries: [
+          Query.equal('\$id', userIds),
+        ],
+      );
+
+      // Map untuk akses cepat user data by ID
+      final userMap = {for (var doc in usersResponse.documents) doc.$id: doc.data};
+
+      // d. Gabungkan data user terbaru ke dalam objek room
+      for (var room in rooms) {
+        final userId = room['id_user'];
+        if (userMap.containsKey(userId)) {
+          // Gunakan nama terbaru dari tabel users
+          room['display_name'] = userMap[userId]?['nama'] ?? 'Pelanggan';
+        } else {
+          // Fallback jika user dihapus atau tidak ditemukan
+          room['display_name'] = room['username'] ?? 'Pelanggan Tidak Dikenal';
+        }
+      }
+
+      return rooms;
     } catch (e) {
+      print("Error getAllChatRooms with dynamic names: $e");
       return [];
     }
   }

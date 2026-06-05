@@ -382,6 +382,11 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
           customerPhone = user.telepon;
         }
 
+        // --- LOGIKA PENGUNCIAN VALIDASI (BARU) ---
+        bool isCOD = item.metode.contains('Ditempat') || item.metode.contains('Cash');
+        bool isQueueFinished = reservasi?.statusAntrian == 'Selesai';
+        bool isValidationLocked = isCOD && !isQueueFinished;
+
         return Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -394,8 +399,8 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
               ),
             ],
             border: Border.all(
-              color: Colors.grey.withOpacity(0.1),
-              width: 1,
+              color: isValidationLocked ? AppColors.gold.withOpacity(0.3) : Colors.grey.withOpacity(0.1),
+              width: isValidationLocked ? 2 : 1,
             ),
           ),
           child: Padding(
@@ -473,20 +478,27 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryDark.withOpacity(0.05),
+                            color: isValidationLocked ? AppColors.gold.withOpacity(0.1) : AppColors.primaryDark.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppColors.primaryDark.withOpacity(0.1)),
+                            border: Border.all(color: isValidationLocked ? AppColors.gold.withOpacity(0.3) : AppColors.primaryDark.withOpacity(0.1)),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.access_time_filled, size: 12, color: AppColors.primaryDark),
+                              Icon(
+                                isValidationLocked ? Icons.lock_clock : Icons.access_time_filled, 
+                                size: 12, 
+                                color: isValidationLocked ? AppColors.gold : AppColors.primaryDark
+                              ),
                               const SizedBox(width: 6),
-                              Text(
-                                bookingTime,
-                                style: TextStyle(
-                                  fontSize: 12, 
-                                  color: AppColors.primaryDark, 
-                                  fontWeight: FontWeight.bold
+                              Expanded(
+                                child: Text(
+                                  isValidationLocked ? "Menunggu Kapster Selesai" : bookingTime,
+                                  style: TextStyle(
+                                    fontSize: 12, 
+                                    color: isValidationLocked ? AppColors.gold : AppColors.primaryDark, 
+                                    fontWeight: FontWeight.bold
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -514,20 +526,37 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
 
                 // Payment Details
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(
-                      Icons.payment_outlined,
-                      size: 16,
-                      color: AppColors.textSecondary,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.payment_outlined,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          item.metode,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      item.metode,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
+                    if (isCOD)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          "COD",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green),
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 
@@ -537,6 +566,29 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (isValidationLocked)
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.gold.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline, size: 14, color: AppColors.gold),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Menunggu kapster menyelesaikan antrian",
+                                  style: TextStyle(fontSize: 11, color: AppColors.gold, fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: () => _showBuktiDialog(item.buktiBayarUrl),
                       style: OutlinedButton.styleFrom(
@@ -558,7 +610,7 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
                     if (item.status == 'Pending') ...[
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () async {
+                        onPressed: isValidationLocked ? null : () async {
                           try {
                             await provider.verifyPembayaran(item.id, true);
                             
@@ -589,8 +641,8 @@ class _ValidationListScreenState extends State<ValidationListScreen> {
                           }
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
+                          backgroundColor: isValidationLocked ? Colors.grey[300] : AppColors.success,
+                          foregroundColor: isValidationLocked ? Colors.grey[600] : Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),

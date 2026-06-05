@@ -39,7 +39,7 @@ class ChatProvider extends ChangeNotifier {
       final roomId = await _dbService.getOrCreateChatRoom(userId, userName);
       _activeRoomId = roomId;
       await loadMessages(roomId);
-      _startPolling(roomId);
+      startPolling(roomId);
     } catch (e) {
       _error = e.toString();
       debugPrint('Error init chat: $e');
@@ -139,17 +139,17 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  // ================= POLLING SYSTEM =================
+  // ================= POLLING SYSTEM (PUBLIC) =================
   Timer? _pollingTimer;
 
-  void _startPolling(String roomId) {
-    _stopPolling();
+  void startPolling(String roomId) {
+    stopPolling();
     _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       loadMessages(roomId);
     });
   }
 
-  void _stopPolling() {
+  void stopPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = null;
   }
@@ -161,7 +161,7 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _stopPolling();
+    stopPolling();
     super.dispose();
   }
 }

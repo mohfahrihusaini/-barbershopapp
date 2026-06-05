@@ -3,19 +3,16 @@ import 'package:flutter/foundation.dart'; // Untuk kIsWeb
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../providers/booking_provider.dart';
 import 'home_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
-  final String idReservasi;
-  final int totalBayar;
-  final String namaLayanan;
+  final Map<String, dynamic> bookingData;
 
   const PaymentScreen({
     super.key,
-    required this.idReservasi,
-    required this.totalBayar,
-    required this.namaLayanan,
+    required this.bookingData,
   });
 
   @override
@@ -26,6 +23,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   PlatformFile? _selectedImage;
   String _paymentMethod = 'Bayar Ditempat'; // Default
   String _selectedBank = 'BCA';
+  bool _isSaving = false; // Local loading state for dual-process
 
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(
@@ -49,17 +47,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    setState(() => _isSaving = true);
+
     try {
       final bookingProvider = Provider.of<BookingProvider>(context, listen: false);
       
+      // STEP 1: CREATE RESERVATION (Simpan ke DB saat konfirmasi)
+      final reservasiId = await bookingProvider.submitBooking(
+        idUser: widget.bookingData['idUser'],
+        namaPemesan: widget.bookingData['namaPemesan'],
+        tanggal: widget.bookingData['tanggal'],
+        waktuMulai: widget.bookingData['waktuMulai'],
+        idBarber: widget.bookingData['idBarber'],
+        idLayanan: widget.bookingData['idLayanan'],
+      );
+
+      if (reservasiId == null) throw Exception("Gagal membuat reservasi");
+
+      // STEP 2: SUBMIT PAYMENT
       String metodeFinal = _paymentMethod;
       if (_paymentMethod == 'QRIS') {
         metodeFinal = "QRIS - $_selectedBank";
       }
 
       await bookingProvider.submitPembayaran(
-        idReservasi: widget.idReservasi,
-        jumlahBayar: widget.totalBayar,
+        idReservasi: reservasiId,
+        jumlahBayar: widget.bookingData['harga'],
         fileGambar: _selectedImage, // Bisa null jika Bayar Ditempat
         metode: metodeFinal,
       );
@@ -95,12 +108,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
           SnackBar(content: Text("Gagal memproses: $e")),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = Provider.of<BookingProvider>(context).isLoading;
+    // Gunakan _isSaving lokal agar lebih responsif
+    final isLoading = _isSaving;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Pembayaran")),
@@ -124,7 +140,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     const Text("Total Tagihan", style: TextStyle(fontSize: 14)),
                     const SizedBox(height: 5),
                     Text(
-                      "Rp ${widget.totalBayar}", 
+                      "Rp ${NumberFormat('#,##0', 'id_ID').format(widget.bookingData['harga'])}", 
                       style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.blue),
                     ),
                     const Divider(),
@@ -132,7 +148,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text("Layanan:"),
-                        Text(widget.namaLayanan, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(widget.bookingData['namaLayanan'], style: const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ],

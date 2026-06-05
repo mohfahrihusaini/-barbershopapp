@@ -934,7 +934,12 @@ class _QueueManagementScreenState extends State<QueueManagementScreen> {
                   ElevatedButton(
                     onPressed: () async {
                       final success = await queueProvider.updateReservationStatus(reservation.id, 'Selesai');
-                      if (!success && context.mounted) {
+                      if (success) {
+                        // REFRESH PEMBAYARAN: Agar otomatisasi LUNAS (COD) masuk ke laporan
+                        if (context.mounted) {
+                          Provider.of<BookingProvider>(context, listen: false).loadPembayaranList();
+                        }
+                      } else if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(queueProvider.error ?? "Gagal mengubah status: Unknown Error"),

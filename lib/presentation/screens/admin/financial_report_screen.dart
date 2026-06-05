@@ -23,10 +23,39 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
   @override
   void initState() {
     super.initState();
-    // Load data terbaru saat halaman dibuka
-    Future.microtask(() => 
-      Provider.of<BookingProvider>(context, listen: false).loadPembayaranList()
-    );
+    // Load data awal berdasarkan periode default
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateData();
+    });
+  }
+
+  void _updateData() {
+    final now = DateTime.now();
+    DateTime start;
+    DateTime end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    if (_selectedPeriod == 'Hari Ini') {
+      start = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    } else if (_selectedPeriod == 'Minggu Ini') {
+      // Cari hari Senin minggu ini
+      int currentWeekday = now.weekday; // 1 (Mon) - 7 (Sun)
+      start = DateTime(now.year, now.month, now.day).subtract(Duration(days: currentWeekday - 1));
+      start = DateTime(start.year, start.month, start.day, 0, 0, 0);
+      
+      // End adalah hari Minggu pukul 23:59:59
+      DateTime sunday = start.add(const Duration(days: 6));
+      end = DateTime(sunday.year, sunday.month, sunday.day, 23, 59, 59);
+    } else if (_selectedPeriod == 'Bulan Ini') {
+      start = DateTime(now.year, now.month, 1, 0, 0, 0);
+      // Akhir bulan (hari 0 bulan depan adalah hari terakhir bulan ini)
+      DateTime nextMonth = DateTime(now.year, now.month + 1, 0);
+      end = DateTime(nextMonth.year, nextMonth.month, nextMonth.day, 23, 59, 59);
+    } else {
+      // Default / Semua waktu (misal 1 tahun terakhir)
+      start = DateTime(now.year, 1, 1, 0, 0, 0);
+    }
+
+    Provider.of<BookingProvider>(context, listen: false).fetchLaporanKeuangan(start, end);
   }
 
   String _formatCurrency(int amount) {
@@ -41,35 +70,12 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
   Widget build(BuildContext context) {
     final provider = Provider.of<BookingProvider>(context);
     
-    // Hitung ringkasan berdasarkan periode yang dipilih
-    int currentRevenue = 0;
-    List<PembayaranModel> filteredTransactions = [];
+    // Data diambil langsung dari provider yang sudah terfilter server
+    int currentRevenue = provider.filteredRevenue;
+    int totalOrders = provider.filteredTotalOrders; // Opsi 1: Semua order
     
-    if (_selectedPeriod == 'Hari Ini') {
-      currentRevenue = provider.todayRevenue;
-      filteredTransactions = provider.pembayaranList.where((p) => 
-        p.status.toLowerCase() == 'lunas' && 
-        p.createdAt.year == DateTime.now().year &&
-        p.createdAt.month == DateTime.now().month &&
-        p.createdAt.day == DateTime.now().day
-      ).toList();
-    } else if (_selectedPeriod == 'Bulan Ini') {
-      currentRevenue = provider.monthRevenue;
-      filteredTransactions = provider.pembayaranList.where((p) => 
-        p.status.toLowerCase() == 'lunas' && 
-        p.createdAt.year == DateTime.now().year &&
-        p.createdAt.month == DateTime.now().month
-      ).toList();
-    } else {
-      // Default (Semua/Total) jika periode lain belum diimplementasi spesifik
-      currentRevenue = provider.totalRevenue;
-      filteredTransactions = provider.pembayaranList.where((p) => 
-        p.status.toLowerCase() == 'lunas'
-      ).toList();
-    }
-
-    // Urutkan transaksi dari yang terbaru
-    filteredTransactions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    // List transaksi untuk ditampilkan (bisa difilter status jika ingin)
+    List<PembayaranModel> transactionsToShow = provider.filteredPembayaranList;
 
     return Scaffold(
       appBar: AppBar(
@@ -92,7 +98,7 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
         ? const Center(child: CircularProgressIndicator())
         : RefreshIndicator(
             onRefresh: () async {
-              await Provider.of<BookingProvider>(context, listen: false).loadPembayaranList();
+              _updateData();
             },
             child: Column(
               children: [
@@ -100,27 +106,24 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
                 _buildFilterSection(),
                 
                 // Summary Cards
-                _buildSummaryCards(currentRevenue, filteredTransactions.length),
+                _buildSummaryCards(currentRevenue, totalOrders),
                 
                 // Expanded untuk konten scrollable
                 Expanded(
                   child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(), // Agar bisa di-refresh meski konten sedikit
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        // Revenue Chart
+                        // Revenue Chart (Bisa tetap menggunakan data global untuk tren)
                         _buildRevenueChart(provider.getDailyRevenueData()),
                         
                         const SizedBox(height: 24),
                         
                         // Transaction List
-                        _buildTransactionList(filteredTransactions),
+                        _buildTransactionList(transactionsToShow),
                         
                         const SizedBox(height: 24),
-                        
-                        // Barber Performance
-                        // _buildBarberPerformance(), // Sementara hide dummy
                       ],
                     ),
                   ),
@@ -129,7 +132,7 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
             ),
           ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showSummaryDialog(currentRevenue, filteredTransactions.length),
+        onPressed: () => _showSummaryDialog(currentRevenue, totalOrders),
         backgroundColor: AppColors.primaryDark,
         child: const Icon(Icons.summarize, color: Colors.white),
       ),
@@ -158,11 +161,14 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
                   icon: const Icon(Icons.arrow_drop_down, color: AppColors.textSecondary),
                   items: const [
                     DropdownMenuItem(value: 'Hari Ini', child: Text('Hari Ini')),
-                    DropdownMenuItem(value: 'Minggu Ini', child: Text('Minggu Ini')), // Fallback ke total
+                    DropdownMenuItem(value: 'Minggu Ini', child: Text('Minggu Ini')),
                     DropdownMenuItem(value: 'Bulan Ini', child: Text('Bulan Ini')),
                   ],
                   onChanged: (value) {
-                    setState(() => _selectedPeriod = value!);
+                    if (value != null) {
+                      setState(() => _selectedPeriod = value);
+                      _updateData();
+                    }
                   },
                 ),
               ),
@@ -174,7 +180,9 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
   }
 
   Widget _buildSummaryCards(int revenue, int count) {
-    final avg = count > 0 ? revenue ~/ count : 0;
+    // Rata-rata transaksi sebaiknya dari order yang lunas saja agar akurat
+    final paidCount = Provider.of<BookingProvider>(context, listen: false).filteredPaidOrders;
+    final avg = paidCount > 0 ? revenue ~/ paidCount : 0;
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -182,27 +190,27 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
         children: [
           Expanded(
             child: _buildSummaryCard(
-              title: "Total Pendapatan",
+              title: "Pendapatan (Lunas)",
               value: _formatCurrency(revenue),
               color: AppColors.success,
-              icon: Icons.attach_money_outlined,
-              trend: "Real",
+              icon: Icons.payments_outlined,
+              trend: "Paid",
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: _buildSummaryCard(
-              title: "Total Transaksi",
+              title: "Total Pesanan",
               value: "$count",
               color: AppColors.cyan,
-              icon: Icons.receipt_outlined,
-              trend: "Order",
+              icon: Icons.shopping_basket_outlined,
+              trend: "All",
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: _buildSummaryCard(
-              title: "Rata-rata/Transaksi",
+              title: "Rata-rata/Lunas",
               value: _formatCurrency(avg),
               color: AppColors.gold,
               icon: Icons.analytics_outlined,
@@ -485,28 +493,10 @@ class _FinancialReportScreenState extends State<FinancialReportScreen> {
   Future<void> _exportReport() async {
     final provider = Provider.of<BookingProvider>(context, listen: false);
     
-    // 1. Filter Data (Sama seperti di build)
-    List<PembayaranModel> dataToExport = [];
-    if (_selectedPeriod == 'Hari Ini') {
-      dataToExport = provider.pembayaranList.where((p) => 
-        p.status.toLowerCase() == 'lunas' && 
-        p.createdAt.year == DateTime.now().year &&
-        p.createdAt.month == DateTime.now().month &&
-        p.createdAt.day == DateTime.now().day
-      ).toList();
-    } else if (_selectedPeriod == 'Bulan Ini') {
-      dataToExport = provider.pembayaranList.where((p) => 
-        p.status.toLowerCase() == 'lunas' && 
-        p.createdAt.year == DateTime.now().year &&
-        p.createdAt.month == DateTime.now().month
-      ).toList();
-    } else {
-      dataToExport = provider.pembayaranList.where((p) => 
-        p.status.toLowerCase() == 'lunas'
-      ).toList();
-    }
+    // Gunakan data yang sudah terfilter oleh provider (sinkron dengan UI)
+    List<PembayaranModel> dataToExport = List.from(provider.filteredPembayaranList);
     
-    // Sort
+    // Sort dari yang terbaru
     dataToExport.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     if (dataToExport.isEmpty) {

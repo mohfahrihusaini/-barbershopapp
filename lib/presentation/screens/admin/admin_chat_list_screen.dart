@@ -70,7 +70,7 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
   }
 
   Widget _buildChatRoomItem(Map<String, dynamic> room) {
-    final clientName = room['username'] ?? 'Pelanggan';
+    final clientName = room['display_name'] ?? 'Pelanggan'; // Gunakan nama dinamis hasil join
     final unreadCount = room['unread_count'] ?? 0;
     final lastMessageTime = DateTime.parse(room['lastmessagetime']);
 
@@ -85,7 +85,8 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
             MaterialPageRoute(
               builder: (context) => AdminChatScreen(
                 roomId: room['\$id'],
-                clientName: clientName,
+                clientId: room['id_user'], // Sertakan ID Pelanggan
+                clientName: clientName, // Gunakan nama dinamis
               ),
             ),
           ).then((_) {

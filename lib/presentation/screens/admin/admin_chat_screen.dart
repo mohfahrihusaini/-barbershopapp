@@ -7,11 +7,13 @@ import '../../theme/app_colors.dart';
 
 class AdminChatScreen extends StatefulWidget {
   final String roomId;
+  final String clientId; // ID Pelanggan
   final String clientName;
 
   const AdminChatScreen({
     super.key,
     required this.roomId,
+    required this.clientId,
     required this.clientName,
   });
 
@@ -30,10 +32,20 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       // Load messages
       chatProvider.loadMessages(widget.roomId);
+      chatProvider.startPolling(widget.roomId); // Mulai polling real-time
       
       // Tandai sudah dibaca (Reset Unread Count)
       chatProvider.markRoomAsRead(widget.roomId);
     });
+  }
+
+  @override
+  void dispose() {
+    // Berhenti polling saat keluar halaman agar hemat baterai/data
+    Provider.of<ChatProvider>(context, listen: false).stopPolling();
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _sendMessage() async {
@@ -48,7 +60,7 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
       await chatProvider.sendMessage(
         senderId: adminId,
         senderName: adminName,
-        receiverId: widget.roomId, // Penanda receiver pelanggan
+        receiverId: widget.clientId, // Gunakan ID Pelanggan sebagai penerima
         text: _messageController.text,
         isAdmin: true,
       );
